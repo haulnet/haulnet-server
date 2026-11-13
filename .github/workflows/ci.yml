@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Dockerfile pins match luxon.lock
+        run: |
+          . ./luxon.lock
+          for key in LUXON_VERSION LUXON_LINUX_ASSET LUXON_LINUX_SHA256 LUXON_LICENSE_SHA256; do
+            grep -q "ARG $key=${!key}\$" Dockerfile || { echo "Dockerfile $key differs from luxon.lock"; exit 1; }
+          done
+      - name: Package
+        run: scripts/package.sh "0.0.0-ci.${GITHUB_RUN_NUMBER}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: build/*.tar.gz
+          retention-days: 7
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --build-arg VERSION=0.0.0-ci -t haulnet-server:ci .
+      - name: Start container
+        run: |
+          docker run -d --name hs --network host -e EXTERNAL_ADDRESS=127.0.0.1 -e SERVER_NAME=ci -e MAX_ROOMS=5 haulnet-server:ci
+          for i in $(seq 1 30); do curl -fs localhost:27080/healthz && break; sleep 1; done
+          docker logs hs
+      - name: Check endpoints and sockets
+        run: |
+          status=$(curl -fs localhost:27080/status)
+          echo "$status"
+          echo "$status" | jq -e '.name == "ci" and .rooms == 0 and .players == 0 and .max_rooms == 5 and .accepting and .luxon != ""'
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:27080/apps)" = 404
+          ss -lunp | grep -E ':2700[0-2]\b'
+          ss -ltn | grep -E '127\.0\.0\.1:5088\b'
+          ! ss -ltn | grep -E '(0\.0\.0\.0|\[::\]|\*):5088\b'
+          test "$(docker inspect -f '{{.Config.User}}' hs)" = haulnet
+      - name: Container stops cleanly on SIGTERM
+        run: |
+          docker stop -t 15 hs
+          test "$(docker inspect -f '{{.State.ExitCode}}' hs)" = 0

@@ -1,0 +1,20 @@
+# Haulnet community server. Copy dist/haulnet-server.env.example to haulnet-server.env, set
+# EXTERNAL_ADDRESS, then: docker compose up -d
+services:
+  haulnet-server:
+    image: ghcr.io/haulnet/haulnet-server:${HAULNET_SERVER_TAG:-latest}
+    container_name: haulnet-server
+    restart: unless-stopped
+    # Host networking: no NAT in front of UDP, and the server sees the real player addresses.
+    network_mode: host
+    env_file: haulnet-server.env
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+    # Without host networking (e.g. Docker Desktop), remove network_mode and publish the ports instead:
+    # ports:
+    #   - "27000-27002:27000-27002/udp"
+    #   - "27080:27080/tcp"

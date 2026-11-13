@@ -1,0 +1,8 @@
+# Pinned LuxonServer release (unmodified upstream binaries, BSD-3-Clause).
+# Read by scripts/package.sh and CI; the Dockerfile has the same values as build-arg defaults.
+LUXON_VERSION=v1.5
+LUXON_LINUX_ASSET=luxon_server.musl-static.release.linux-x86_64
+LUXON_LINUX_SHA256=012d55eec3001918fe988d9315920470842de6305ed4bdc132fabaf817fe6f96
+LUXON_WINDOWS_ASSET=luxon_server.msvc.release.exe
+LUXON_WINDOWS_SHA256=d5b272f49b21757d36094f30f986e4f4d2f1502eec79be33ce998ea19fff3286
+LUXON_LICENSE_SHA256=87ca0810c9a251d379ca432fdcde1b8168e4f172a474b46a32be2386e022e766
