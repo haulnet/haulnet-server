@@ -61,6 +61,16 @@ jobs:
         run: |
           docker stop -t 15 hs
           test "$(docker inspect -f '{{.State.ExitCode}}' hs)" = 0
+      - name: Stops when a game port is taken
+        run: |
+          python3 -c "import socket, time; s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM); s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0); s.bind(('::', 27000)); time.sleep(90)" &
+          sleep 1
+          docker run -d --name hs-busy --network host -e EXTERNAL_ADDRESS=127.0.0.1 haulnet-server:ci
+          for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Running}}' hs-busy)" = false ] && break; sleep 1; done
+          docker logs hs-busy 2>&1 | tail -5
+          test "$(docker inspect -f '{{.State.Running}}' hs-busy)" = false
+          test "$(docker inspect -f '{{.State.ExitCode}}' hs-busy)" = 1
+          docker logs hs-busy 2>&1 | grep -q "LuxonServer could not open a port"
 
   updater:
     runs-on: ubuntu-latest
