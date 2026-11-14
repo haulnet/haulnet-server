@@ -8,8 +8,11 @@
 #   haulnet-update status            timer state, running version, last result
 #   haulnet-update rollback          go back to the image that ran before the last update
 #
-# An update happens only when the status endpoint reports no rooms and no players. Afterwards /healthz and
-# /status must answer; otherwise the previous image is started again and the new one is never retried.
+# An update happens when the status endpoint reports no rooms and no players. While games are running, the server
+# is drained: it reports accepting: false, so Haulnet starts no new games on it, and running games go on. With
+# UPDATE_FORCE_AFTER (e.g. 3h) in haulnet-server.env, the update is installed anyway once it has waited that long.
+# Afterwards /healthz and /status must answer; otherwise the previous image is started again and the new one is
+# never retried.
 set -euo pipefail
 
 SERVICE=haulnet-server
@@ -41,7 +44,6 @@ compose() { docker compose --project-directory "$dir" -f "$dir/docker-compose.ym
 
 # Base URL of the status endpoint on this machine, from STATUS_ADDRESS (default :27080).
 status_url() {
-  if [ -n "${HAULNET_UPDATE_STATUS_URL:-}" ]; then printf '%s' "$HAULNET_UPDATE_STATUS_URL"; return; fi
   local addr host port
   addr="$(setting STATUS_ADDRESS :27080)"
   port="${addr##*:}"
@@ -66,22 +68,47 @@ describe() {
 json_int() { sed -n "s/.*\"$1\":[[:space:]]*\([0-9][0-9]*\).*/\1/p" <<<"$2"; }
 
 # Succeeds when nobody can be playing: 0 rooms and 0 players, or LuxonServer down (503), or no container.
+# Otherwise sets $busy to the reason. HAULNET_UPDATE_STATUS_URL replaces the endpoint for this check (tests).
 server_empty() {
   local body code rooms players
   body="$(mktemp)"
-  code="$(curl -s -o "$body" -w '%{http_code}' -m 5 "$(status_url)/status" || true)"
+  code="$(curl -s -o "$body" -w '%{http_code}' -m 5 "${HAULNET_UPDATE_STATUS_URL:-$(status_url)}/status" || true)"
   rooms="$(json_int rooms "$(cat "$body")")"; players="$(json_int players "$(cat "$body")")"
   rm -f "$body"
   case "$code" in
     200)
-      if [ -z "$rooms" ] || [ -z "$players" ]; then log "deferred: cannot read /status"; return 1; fi
+      if [ -z "$rooms" ] || [ -z "$players" ]; then busy="cannot read /status"; return 1; fi
       if [ "$rooms" -eq 0 ] && [ "$players" -eq 0 ]; then return 0; fi
-      log "deferred: $rooms rooms, $players players"; return 1 ;;
+      busy="$rooms rooms, $players players"; return 1 ;;
     503) return 0 ;;
     *)
-      if container_running; then log "deferred: status endpoint does not answer (HTTP $code)"; return 1; fi
+      if container_running; then busy="status endpoint does not answer (HTTP $code)"; return 1; fi
       return 0 ;;
   esac
+}
+
+# UPDATE_FORCE_AFTER in seconds: 90s, 30m, 3h, 1d; empty or 0 = never.
+force_after() {
+  local value
+  value="$(setting UPDATE_FORCE_AFTER "")"
+  [ -n "$value" ] || { echo 0; return; }
+  [[ "$value" =~ ^([0-9]+)([smhd]?)$ ]] || die "UPDATE_FORCE_AFTER must look like 3h or 30m, got '$value'"
+  case "${BASH_REMATCH[2]}" in
+    d) echo $((BASH_REMATCH[1] * 86400)) ;;
+    h) echo $((BASH_REMATCH[1] * 3600)) ;;
+    m) echo $((BASH_REMATCH[1] * 60)) ;;
+    *) echo $((BASH_REMATCH[1])) ;;
+  esac
+}
+
+# Drain: haulnetd reports accepting: false while $WORK_DIR/drain exists (Haulnet then starts no new games here).
+# The file lives inside the container, so a recreated container starts undrained.
+drain() { docker exec "$CONTAINER" sh -c 'touch "${WORK_DIR:-/var/lib/haulnet}/drain"' 2>/dev/null || true; }
+undrain() { docker exec "$CONTAINER" sh -c 'rm -f "${WORK_DIR:-/var/lib/haulnet}/drain"' 2>/dev/null || true; }
+
+# $state/pending holds "<image id> <epoch seconds when first seen>" while an update waits for players to leave.
+clear_pending() {
+  if [ -f "$state/pending" ]; then rm -f "$state/pending"; undrain; fi
 }
 
 # UPDATE_WINDOW=HH:MM-HH:MM (local time, may cross midnight); empty means any time.
@@ -135,7 +162,6 @@ cmd_run() {
   flock -n 9 || { log "another update is running"; return 0; }
 
   if [ "$force" = 0 ] && ! in_window; then log "outside UPDATE_WINDOW $(setting UPDATE_WINDOW "")"; return 0; fi
-  if [ "$force" = 0 ] && ! server_empty; then remember deferred; return 0; fi
 
   local ref old new old_version="" new_version source from=nothing
   ref="$(image_ref)"
@@ -152,24 +178,40 @@ cmd_run() {
   # keep_old: put the compose tag back on the running image, so a manual "docker compose up" changes nothing.
   keep_old() { [ -z "$old" ] || docker tag "$RUNNING_TAG" "$ref"; }
 
-  if [ "$new" = "$old" ]; then log "up to date: $from"; remember "up to date"; return 0; fi
+  if [ "$new" = "$old" ]; then log "up to date: $from"; clear_pending; remember "up to date"; return 0; fi
   if [ -f "$state/bad" ] && grep -qx "$new" "$state/bad"; then
-    log "skipped $(describe "$ref"): it was rolled back before"; keep_old; remember "skipped rolled-back image"; return 0
+    log "skipped $(describe "$ref"): it was rolled back before"
+    keep_old; clear_pending; remember "skipped rolled-back image"; return 0
   fi
 
   source="$(label "$ref" "$SOURCE_LABEL")"; new_version="$(label "$ref" "$VERSION_LABEL")"
   if [ "$source" != "$EXPECTED_SOURCE" ] || ! semver "$new_version"; then
     log "refused $ref: source '$source', version '$new_version' (expected a haulnet-server release)"
-    keep_old; remember refused; return 1
+    keep_old; clear_pending; remember refused; return 1
   fi
-  if [ -n "$old" ] && semver "$old_version"; then
+  if [ "$force" = 0 ] && [ -n "$old" ] && semver "$old_version"; then
     if [ "${new_version%%.*}" != "${old_version%%.*}" ] || ! version_ge "$new_version" "$old_version"; then
-      log "refused $new_version over $old_version: only newer versions with the same major version update by themselves"
-      keep_old; remember refused; return 1
+      log "refused $new_version over $old_version: only newer versions with the same major version update by themselves (--force installs it)"
+      keep_old; clear_pending; remember refused; return 1
     fi
   fi
 
-  if [ "$force" = 0 ] && ! server_empty; then keep_old; remember deferred; return 0; fi
+  local busy="" since limit waited
+  if [ "$force" = 0 ] && ! server_empty; then
+    since=""
+    if [ -f "$state/pending" ] && [ "$(cut -d' ' -f1 "$state/pending")" = "$new" ]; then
+      since="$(cut -d' ' -f2 "$state/pending")"
+    fi
+    [ -n "$since" ] || { since="$(date +%s)"; printf '%s %s\n' "$new" "$since" >"$state/pending"; }
+    drain
+    limit="$(force_after)"; waited=$(( $(date +%s) - since ))
+    if [ "$limit" -gt 0 ] && [ "$waited" -ge "$limit" ]; then
+      log "forcing the update: waited $((waited / 60)) min for an empty server ($busy)"
+    else
+      log "deferred: $busy; draining (no new games here)$([ "$limit" -gt 0 ] && printf '; forced in %s min' $(((limit - waited + 59) / 60)))"
+      keep_old; remember deferred; return 0
+    fi
+  fi
 
   local to
   to="$(describe "$ref")"
@@ -178,6 +220,7 @@ cmd_run() {
     docker tag "$RUNNING_TAG" "$PREVIOUS_TAG"
     printf '%s\n' "$old" >"$state/previous"
   fi
+  rm -f "$state/pending"
   compose up -d --pull never "$SERVICE" >/dev/null
   if healthy "$new"; then
     docker tag "$ref" "$RUNNING_TAG"

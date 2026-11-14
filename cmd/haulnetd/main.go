@@ -119,7 +119,11 @@ func run(cfg config.Config, luxonConfig string) int {
 		MaxRooms:     cfg.MaxRooms,
 		MaxPlayers:   cfg.MaxPlayers,
 		Started:      time.Now(),
+		DrainFile:    filepath.Join(cfg.WorkDir, "drain"),
 	}
+	// A drain file left from an earlier run (systemd StateDirectory survives restarts) must not keep a fresh
+	// server closed for new games.
+	_ = os.Remove(svc.DrainFile)
 	server := &http.Server{
 		Handler:           svc.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,

@@ -107,13 +107,14 @@ curl http://<server>:27080/status
 ```
 
 ```json
-{"haulnet_server":"0.1.0","luxon":"v1.5","name":"msk-1","rooms":3,"players":11,"max_rooms":40,"max_players":200,"cpu_busy":0.04,"accepting":true,"uptime_s":86400}
+{"haulnet_server":"0.1.0","luxon":"v1.5","name":"msk-1","rooms":3,"players":11,"max_rooms":40,"max_players":200,"cpu_busy":0.04,"accepting":true,"draining":false,"uptime_s":86400}
 ```
 
 - `rooms` / `players`: game rooms and the players in them, private rooms included. Voice rooms are not
   counted separately.
 - `cpu_busy`: share of time LuxonServer's main loop was busy over the last minute (0–1).
-- `accepting`: false when `MAX_ROOMS` or `MAX_PLAYERS` is reached.
+- `accepting`: false when `MAX_ROOMS` or `MAX_PLAYERS` is reached, or while the server is draining.
+- `draining`: true while an update waits for the running games to end (see "Updating").
 - `/healthz` answers `ok` when LuxonServer is running.
 
 Only counts and versions are published: never room names, player names, addresses or IDs. Responses are
@@ -139,9 +140,12 @@ and small.
 sudo ./haulnet-update
 ```
 
-It waits for an empty server: if the status endpoint reports rooms or players, it does nothing and says so
-(`sudo ./haulnet-update --force` updates anyway and disconnects them). Otherwise it pulls the image, restarts the
-server and checks `/healthz` and `/status`. If the new version does not come up within 90 seconds, it starts the
+It waits for an empty server. If the status endpoint reports rooms or players, it **drains** the server instead:
+the status endpoint reports `"accepting": false, "draining": true`, so Haulnet starts no new games here, while
+running games and friends joining them are not affected; the next run checks again. With
+`UPDATE_FORCE_AFTER=3h` in `haulnet-server.env` the update is installed anyway once it has waited that long, and
+`sudo ./haulnet-update --force` installs it right now; both disconnect the players who are still on. Once the server
+is empty, it restarts with the new image and checks `/healthz` and `/status`. If the new version does not come up within 90 seconds, it starts the
 previous one again and never installs that image again. Plain `docker compose pull && docker compose up -d` works
 too, without these checks.
 

@@ -50,8 +50,9 @@ update run; said "up to date"; echo "ok: nothing new"
 publish 0.0.2
 update run; said "updated to 0.0.2"; expect 0.0.2 "update when the server is empty"
 
-publish 0.0.3
-python3 - <<'EOF' &
+# busy / idle: a fake status endpoint that reports one room with two players (only the "is it empty" check uses it).
+busy() {
+  python3 - <<'EOF' &
 import http.server
 
 class Busy(http.server.BaseHTTPRequestHandler):
@@ -66,12 +67,22 @@ class Busy(http.server.BaseHTTPRequestHandler):
 
 http.server.HTTPServer(("127.0.0.1", 27099), Busy).serve_forever()
 EOF
-fake=$!
-sleep 1
+  fake=$!
+  sleep 1
+}
+idle() { kill "$fake"; wait "$fake" 2>/dev/null || true; fake=""; }
+real_status() { curl -s localhost:27080/status; }
+
+publish 0.0.3
+busy
 HAULNET_UPDATE_STATUS_URL=http://127.0.0.1:27099 update run
-said "deferred: 1 rooms, 2 players"; expect 0.0.2 "deferred while players are on the server"
-kill "$fake"; fake=""
+said "deferred: 1 rooms, 2 players; draining"; expect 0.0.2 "deferred while players are on the server"
+real_status | grep -q '"accepting":false,"draining":true' || fail "server not drained: $(real_status)"
+echo "ok: drained while waiting"
+idle
 update run; expect 0.0.3 "updated once the server is empty"
+real_status | grep -q '"accepting":true,"draining":false' || fail "new server still drained: $(real_status)"
+echo "ok: new server accepts games"
 
 publish 0.0.4 'ENV LUXON_BIN=/bin/false'
 if update run; then fail "a broken image was reported as updated"; fi
@@ -86,5 +97,19 @@ publish 0.0.5
 update run; expect 0.0.5 "update after a refused image"
 update rollback; expect 0.0.3 "manual rollback"
 update run; said "rolled back before"; expect 0.0.3 "rolled-back image is not reinstalled"
+
+publish 0.0.6
+echo "UPDATE_FORCE_AFTER=5s" >>"$work/haulnet-server.env"
+busy
+HAULNET_UPDATE_STATUS_URL=http://127.0.0.1:27099 update run
+said "forced in 1 min"; expect 0.0.3 "deferred before UPDATE_FORCE_AFTER"
+sleep 6
+HAULNET_UPDATE_STATUS_URL=http://127.0.0.1:27099 update run
+said "forcing the update"; expect 0.0.6 "forced after UPDATE_FORCE_AFTER with players still on"
+idle
+
+publish 1.0.0
+if update run; then fail "a major version was installed by itself"; fi
+update run --force; expect 1.0.0 "major version installed with --force"
 
 echo "all updater checks passed"
