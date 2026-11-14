@@ -21,7 +21,7 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: ShellCheck
-        run: shellcheck dist/haulnet-update scripts/*.sh
+        run: shellcheck -e SC1091 dist/haulnet-update scripts/*.sh
       - name: Dockerfile pins match luxon.lock
         run: |
           . ./luxon.lock

@@ -59,8 +59,8 @@ label() { docker image inspect -f "{{index .Config.Labels \"$2\"}}" "$1" 2>/dev/
 describe() {
   local digest
   digest="$(docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2>/dev/null | head -n 1)"
-  printf '%s %s' "$(label "$1" "$VERSION_LABEL")" "${digest#*@}"
-  [ -n "$digest" ] || printf '%s' "$1"
+  if [ -n "$digest" ]; then printf '%s %s' "$(label "$1" "$VERSION_LABEL")" "${digest#*@}"
+  else printf '%s %s' "$(label "$1" "$VERSION_LABEL")" "$(docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || printf '%s' "$1")"; fi
 }
 
 json_int() { sed -n "s/.*\"$1\":[[:space:]]*\([0-9][0-9]*\).*/\1/p" <<<"$2"; }
@@ -114,7 +114,12 @@ healthy() {
   return 1
 }
 
-# Points the image tag back at an image we already have and recreates the container from it.
+# Local tags keep the images we may need again: once the channel tag moves to a new image, the old one is no longer
+# reachable by name (and with Docker's containerd image store not even by id).
+RUNNING_TAG=haulnet-update/running:latest
+PREVIOUS_TAG=haulnet-update/previous:latest
+
+# Points the compose image tag at an image we already have and recreates the container from it.
 start_image() {
   docker tag "$1" "$2"
   compose up -d --pull never "$SERVICE" >/dev/null
@@ -132,69 +137,76 @@ cmd_run() {
   if [ "$force" = 0 ] && ! in_window; then log "outside UPDATE_WINDOW $(setting UPDATE_WINDOW "")"; return 0; fi
   if [ "$force" = 0 ] && ! server_empty; then remember deferred; return 0; fi
 
-  local ref old new old_version new_version source
+  local ref old new old_version="" new_version source from=nothing
   ref="$(image_ref)"
   [ -n "$ref" ] || die "no image in $dir/docker-compose.yml"
   old="$(running_image)"
+  if [ -n "$old" ]; then
+    docker tag "$old" "$RUNNING_TAG"
+    old_version="$(label "$RUNNING_TAG" "$VERSION_LABEL")"
+    from="$(describe "$RUNNING_TAG")"
+  fi
   compose pull --quiet "$SERVICE" || { remember "pull failed"; die "pull of $ref failed"; }
   new="$(docker image inspect -f '{{.Id}}' "$ref")"
 
-  if [ "$new" = "$old" ]; then log "up to date: $(describe "$old")"; remember "up to date"; return 0; fi
+  # keep_old: put the compose tag back on the running image, so a manual "docker compose up" changes nothing.
+  keep_old() { [ -z "$old" ] || docker tag "$RUNNING_TAG" "$ref"; }
+
+  if [ "$new" = "$old" ]; then log "up to date: $from"; remember "up to date"; return 0; fi
   if [ -f "$state/bad" ] && grep -qx "$new" "$state/bad"; then
-    [ -z "$old" ] || docker tag "$old" "$ref"
-    log "skipped $(describe "$new"): it was rolled back before"; remember "skipped rolled-back image"; return 0
+    log "skipped $(describe "$ref"): it was rolled back before"; keep_old; remember "skipped rolled-back image"; return 0
   fi
 
-  source="$(label "$new" "$SOURCE_LABEL")"; new_version="$(label "$new" "$VERSION_LABEL")"
-  old_version="$([ -z "$old" ] || label "$old" "$VERSION_LABEL")"
+  source="$(label "$ref" "$SOURCE_LABEL")"; new_version="$(label "$ref" "$VERSION_LABEL")"
   if [ "$source" != "$EXPECTED_SOURCE" ] || ! semver "$new_version"; then
-    [ -z "$old" ] || docker tag "$old" "$ref"
     log "refused $ref: source '$source', version '$new_version' (expected a haulnet-server release)"
-    remember refused; return 1
+    keep_old; remember refused; return 1
   fi
   if [ -n "$old" ] && semver "$old_version"; then
     if [ "${new_version%%.*}" != "${old_version%%.*}" ] || ! version_ge "$new_version" "$old_version"; then
-      docker tag "$old" "$ref"
       log "refused $new_version over $old_version: only newer versions with the same major version update by themselves"
-      remember refused; return 1
+      keep_old; remember refused; return 1
     fi
   fi
 
-  if [ "$force" = 0 ] && ! server_empty; then
-    [ -z "$old" ] || docker tag "$old" "$ref"
-    remember deferred; return 0
-  fi
+  if [ "$force" = 0 ] && ! server_empty; then keep_old; remember deferred; return 0; fi
 
-  log "updating from ${old:+$(describe "$old")}${old:-nothing} to $(describe "$new")"
-  [ -z "$old" ] || { printf '%s\n' "$old" >"$state/previous"; docker tag "$old" haulnet-update/previous:latest; }
+  local to
+  to="$(describe "$ref")"
+  log "updating from $from to $to"
+  if [ -n "$old" ]; then
+    docker tag "$RUNNING_TAG" "$PREVIOUS_TAG"
+    printf '%s\n' "$old" >"$state/previous"
+  fi
   compose up -d --pull never "$SERVICE" >/dev/null
   if healthy "$new"; then
-    log "updated to $(describe "$new")"; remember "updated to $new_version"
+    docker tag "$ref" "$RUNNING_TAG"
+    log "updated to $to"; remember "updated to $new_version"
     docker image prune -f --filter "label=$SOURCE_LABEL=$EXPECTED_SOURCE" >/dev/null || true
     return 0
   fi
 
   printf '%s\n' "$new" >>"$state/bad"
-  if [ -z "$old" ]; then remember "new image unhealthy"; die "$(describe "$new") did not become healthy and there is no previous image"; fi
-  log "$(describe "$new") did not become healthy within ${health_timeout}s, rolling back"
-  start_image "$old" "$ref"
+  if [ -z "$old" ]; then remember "new image unhealthy"; die "$to did not become healthy and there is no previous image"; fi
+  log "$to did not become healthy within ${health_timeout}s, rolling back"
+  start_image "$PREVIOUS_TAG" "$ref"
   if healthy "$old"; then
-    log "rolled back to $(describe "$old")"; remember "rolled back from $new_version"; return 1
+    log "rolled back to $from"; remember "rolled back from $new_version"; return 1
   fi
-  remember "rollback failed"; die "rollback to $(describe "$old") is not healthy either; see docker compose logs"
+  remember "rollback failed"; die "rollback to $from is not healthy either; see docker compose logs"
 }
 
 cmd_rollback() {
   mkdir -p "$state"
   local ref old previous
-  [ -f "$state/previous" ] || die "no previous image recorded"
-  previous="$(cat "$state/previous")"
+  previous="$(docker image inspect -f '{{.Id}}' "$PREVIOUS_TAG" 2>/dev/null)" || die "no previous image recorded"
   ref="$(image_ref)"; old="$(running_image)"
-  docker image inspect "$previous" >/dev/null 2>&1 || die "previous image $previous is no longer on this machine"
-  [ -z "$old" ] || [ "$old" = "$previous" ] || printf '%s\n' "$old" >>"$state/bad"
-  start_image "$previous" "$ref"
-  healthy "$previous" || die "$(describe "$previous") is not healthy; see docker compose logs"
-  log "rolled back to $(describe "$previous"); the image it replaced will not be installed again"
+  [ "$old" != "$previous" ] || die "the previous image is already running"
+  [ -z "$old" ] || printf '%s\n' "$old" >>"$state/bad"
+  start_image "$PREVIOUS_TAG" "$ref"
+  healthy "$previous" || die "$(describe "$PREVIOUS_TAG") is not healthy; see docker compose logs"
+  docker tag "$PREVIOUS_TAG" "$RUNNING_TAG"
+  log "rolled back to $(describe "$PREVIOUS_TAG"); the image it replaced will not be installed again"
   remember "manual rollback"
 }
 
@@ -248,7 +260,7 @@ cmd_status() {
   fi
   log "image: $(image_ref)"
   img="$(running_image)"
-  log "running: ${img:+$(describe "$img")}${img:-no container}"
+  if [ -n "$img" ]; then log "running: $(describe "$img")"; else log "running: no container"; fi
   [ ! -f "$state/last" ] || log "last run: $(cat "$state/last")"
 }
 
