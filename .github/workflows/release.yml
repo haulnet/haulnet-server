@@ -1,8 +1,17 @@
 name: Release
 
+# A release is a tag vX.Y.Z: pushed by hand (first, minor and major versions) or created by auto-release.yml after
+# CI passes on main (patch versions). Tags pushed by auto-release.yml use GITHUB_TOKEN, which starts no workflows,
+# so that workflow calls this one directly.
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to release, e.g. v0.1.1
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,14 +20,20 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - run: go test ./...
       - name: Version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        run: |
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          echo "REVISION=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Package
         run: scripts/package.sh "$VERSION"
       - uses: docker/setup-buildx-action@v3
@@ -33,7 +48,9 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          build-args: VERSION=${{ env.VERSION }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            REVISION=${{ env.REVISION }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ env.VERSION }}
             ghcr.io/${{ github.repository }}:latest
@@ -42,5 +59,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           . ./luxon.lock
-          gh release create "$GITHUB_REF_NAME" build/*.tar.gz build/*.zip build/SHA256SUMS \
-            --title "$GITHUB_REF_NAME" --notes "LuxonServer ${LUXON_VERSION}. Image: ghcr.io/${GITHUB_REPOSITORY}:${VERSION}"
+          gh release create "$TAG" build/*.tar.gz build/*.zip build/docker/* build/SHA256SUMS \
+            --verify-tag --title "$TAG" --generate-notes \
+            --notes "LuxonServer ${LUXON_VERSION}. Image: ghcr.io/${GITHUB_REPOSITORY}:${VERSION}"

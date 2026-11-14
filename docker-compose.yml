@@ -2,7 +2,9 @@
 # EXTERNAL_ADDRESS, then: docker compose up -d
 services:
   haulnet-server:
-    image: ghcr.io/haulnet/haulnet-server:${HAULNET_SERVER_TAG:-latest}
+    # "latest" is the newest release. Pin a version with HAULNET_SERVER_TAG in .env next to this file;
+    # HAULNET_SERVER_IMAGE is for testing against another registry.
+    image: ${HAULNET_SERVER_IMAGE:-ghcr.io/haulnet/haulnet-server}:${HAULNET_SERVER_TAG:-latest}
     container_name: haulnet-server
     restart: unless-stopped
     # Host networking: no NAT in front of UDP, and the server sees the real player addresses.

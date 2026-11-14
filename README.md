@@ -57,15 +57,18 @@ A private or loopback `EXTERNAL_ADDRESS` is allowed (LAN parties, VPNs) and logg
 
 ```bash
 mkdir haulnet-server && cd haulnet-server
-curl -fsSLO https://raw.githubusercontent.com/haulnet/haulnet-server/main/docker-compose.yml
-curl -fsSL -o haulnet-server.env https://raw.githubusercontent.com/haulnet/haulnet-server/main/dist/haulnet-server.env.example
+base=https://github.com/haulnet/haulnet-server/releases/latest/download
+curl -fsSLO "$base/docker-compose.yml"
+curl -fsSLO "$base/haulnet-update" && chmod +x haulnet-update
+curl -fsSL -o haulnet-server.env "$base/haulnet-server.env.example"
 nano haulnet-server.env        # set EXTERNAL_ADDRESS
 docker compose up -d
 docker compose logs -f
 ```
 
-The compose file uses host networking (recommended for UDP game traffic). Pin a release with
-`HAULNET_SERVER_TAG=0.1.0 docker compose up -d`.
+The compose file uses host networking (recommended for UDP game traffic) and the image tag `latest`, the newest
+release. To stay on one release, put `HAULNET_SERVER_TAG=0.1.0` into a file named `.env` next to
+`docker-compose.yml`.
 
 ## Run with systemd (no Docker)
 
@@ -126,8 +129,45 @@ do not publish them.
 ## Updating
 
 Releases pin one LuxonServer version (see [`luxon.lock`](luxon.lock)). When R.E.P.O. changes its Photon
-version, a new release follows; Haulnet hides servers with an incompatible version. Update with
-`docker compose pull && docker compose up -d`, or replace both binaries and restart the service.
+version, a new release follows; Haulnet hides servers with an incompatible version. Every change to this
+repository's `main` branch that passes the tests is released as the next patch version, so releases are frequent
+and small.
+
+### Update once (Docker)
+
+```bash
+sudo ./haulnet-update
+```
+
+It waits for an empty server: if the status endpoint reports rooms or players, it does nothing and says so
+(`sudo ./haulnet-update --force` updates anyway and disconnects them). Otherwise it pulls the image, restarts the
+server and checks `/healthz` and `/status`. If the new version does not come up within 90 seconds, it starts the
+previous one again and never installs that image again. Plain `docker compose pull && docker compose up -d` works
+too, without these checks.
+
+### Automatic updates (Docker, off by default)
+
+```bash
+sudo ./haulnet-update enable     # check every 10 minutes (systemd timer)
+sudo ./haulnet-update status     # on/off, running version, last result
+journalctl -u haulnet-update     # every decision, with old and new version and digest
+sudo ./haulnet-update disable
+```
+
+Each check does what `haulnet-update` does by hand. It installs only images of this project with a release version
+that is newer and has the same major version; a new major version is installed by hand (`--force`) after reading
+its release notes. To allow updates only at certain hours, add `UPDATE_WINDOW=03:00-07:00` (server local time) to
+`haulnet-server.env`.
+
+`sudo ./haulnet-update rollback` returns to the version that ran before the last update and keeps the replaced
+one from coming back.
+
+The updater changes only the image. New versions of `docker-compose.yml` or `haulnet-update` itself are mentioned
+in the release notes; download them again from the release when they are.
+
+### Without Docker
+
+Replace `haulnetd` and `luxon_server` with the ones from the new release tarball and restart the service.
 
 ## Building from source
 

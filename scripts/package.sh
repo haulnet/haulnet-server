@@ -11,7 +11,7 @@ cd "$root"
 
 build="$root/build"
 cache="$build/cache/$LUXON_VERSION"
-rm -rf "$build/linux" "$build/windows" "$build"/*.tar.gz "$build"/*.zip
+rm -rf "$build/linux" "$build/windows" "$build/docker" "$build"/*.tar.gz "$build"/*.zip
 mkdir -p "$cache"
 
 fetch() { # url file sha256
@@ -59,4 +59,10 @@ else
   python -m zipfile -c "$zipfile" "haulnet-server-$version"
 fi)
 
-(cd "$build" && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS && cat SHA256SUMS)
+# Docker install files, published as release assets so operators download the files of one release.
+docker="$build/docker"
+mkdir -p "$docker"
+cp docker-compose.yml dist/haulnet-update dist/haulnet-server.env.example "$docker/"
+chmod 755 "$docker/haulnet-update"
+
+(cd "$build" && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS && (cd docker && sha256sum ./*) >> SHA256SUMS && cat SHA256SUMS)

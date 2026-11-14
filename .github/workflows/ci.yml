@@ -20,6 +20,8 @@ jobs:
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
       - run: go test ./...
+      - name: ShellCheck
+        run: shellcheck dist/haulnet-update scripts/*.sh
       - name: Dockerfile pins match luxon.lock
         run: |
           . ./luxon.lock
@@ -59,3 +61,10 @@ jobs:
         run: |
           docker stop -t 15 hs
           test "$(docker inspect -f '{{.State.ExitCode}}' hs)" = 0
+
+  updater:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: haulnet-update end to end (local registry)
+        run: scripts/test-updater.sh
