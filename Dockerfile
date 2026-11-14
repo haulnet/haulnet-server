@@ -37,6 +37,11 @@ USER haulnet
 EXPOSE 27000-27002/udp 27080/tcp
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD ["/opt/haulnet/haulnetd", "-healthcheck"]
 ENTRYPOINT ["/opt/haulnet/haulnetd"]
+# haulnet-update installs only images with this source and a release version (X.Y.Z).
+ARG VERSION=dev
+ARG REVISION=
 LABEL org.opencontainers.image.source="https://github.com/haulnet/haulnet-server" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.description="Haulnet community server for R.E.P.O. (LuxonServer)" \
       org.opencontainers.image.licenses="MIT AND BSD-3-Clause"

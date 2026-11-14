@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+# haulnet-update: keeps a Docker Compose install of haulnet-server on the newest image of its tag, without
+# kicking players. Lives next to docker-compose.yml and haulnet-server.env.
+#
+#   haulnet-update [run] [--force]   update once now (--force: even with players, outside UPDATE_WINDOW)
+#   haulnet-update enable            check every 10 minutes (systemd timer); needs root
+#   haulnet-update disable           stop automatic checks; needs root
+#   haulnet-update status            timer state, running version, last result
+#   haulnet-update rollback          go back to the image that ran before the last update
+#
+# An update happens when the status endpoint reports no rooms and no players. While games are running, the server
+# is drained: it reports accepting: false, so Haulnet starts no new games on it, and running games go on. With
+# UPDATE_FORCE_AFTER (e.g. 3h) in haulnet-server.env, the update is installed anyway once it has waited that long.
+# Afterwards /healthz and /status must answer; otherwise the previous image is started again and the new one is
+# never retried.
+set -euo pipefail
+
+SERVICE=haulnet-server
+CONTAINER=haulnet-server
+SOURCE_LABEL=org.opencontainers.image.source
+VERSION_LABEL=org.opencontainers.image.version
+EXPECTED_SOURCE=https://github.com/haulnet/haulnet-server
+
+script="$(readlink -f "$0")"
+dir="${HAULNET_DIR:-$(dirname "$script")}"
+state="${HAULNET_UPDATE_STATE:-/var/lib/haulnet-update}"
+health_timeout="${HAULNET_UPDATE_HEALTH_TIMEOUT:-90}"
+env_file="$dir/haulnet-server.env"
+
+log() { printf '%s\n' "$*"; }
+die() { printf 'haulnet-update: %s\n' "$*" >&2; exit 1; }
+
+# Reads KEY from haulnet-server.env without executing the file.
+setting() {
+  local value=""
+  if [ -f "$env_file" ]; then
+    value="$(sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$env_file" | tail -n 1 | tr -d '\r')"
+    value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+  fi
+  printf '%s' "${value:-$2}"
+}
+
+compose() { docker compose --project-directory "$dir" -f "$dir/docker-compose.yml" "$@"; }
+
+# Base URL of the status endpoint on this machine, from STATUS_ADDRESS (default :27080).
+status_url() {
+  local addr host port
+  addr="$(setting STATUS_ADDRESS :27080)"
+  port="${addr##*:}"
+  host="${addr%:*}"
+  case "$host" in ""|0.0.0.0|"[::]") host=127.0.0.1 ;; esac
+  printf 'http://%s:%s' "$host" "$port"
+}
+
+image_ref() { compose config --images | head -n 1; }
+running_image() { docker inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || true; }
+container_running() { [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = true ]; }
+label() { docker image inspect -f "{{index .Config.Labels \"$2\"}}" "$1" 2>/dev/null || true; }
+
+# "0.1.2 sha256:…" for logs: version label and registry digest (or image id when the image has no digest).
+describe() {
+  local digest
+  digest="$(docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2>/dev/null | head -n 1)"
+  if [ -n "$digest" ]; then printf '%s %s' "$(label "$1" "$VERSION_LABEL")" "${digest#*@}"
+  else printf '%s %s' "$(label "$1" "$VERSION_LABEL")" "$(docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || printf '%s' "$1")"; fi
+}
+
+json_int() { sed -n "s/.*\"$1\":[[:space:]]*\([0-9][0-9]*\).*/\1/p" <<<"$2"; }
+
+# Succeeds when nobody can be playing: 0 rooms and 0 players, or LuxonServer down (503), or no container.
+# Otherwise sets $busy to the reason. HAULNET_UPDATE_STATUS_URL replaces the endpoint for this check (tests).
+server_empty() {
+  local body code rooms players
+  body="$(mktemp)"
+  code="$(curl -s -o "$body" -w '%{http_code}' -m 5 "${HAULNET_UPDATE_STATUS_URL:-$(status_url)}/status" || true)"
+  rooms="$(json_int rooms "$(cat "$body")")"; players="$(json_int players "$(cat "$body")")"
+  rm -f "$body"
+  case "$code" in
+    200)
+      if [ -z "$rooms" ] || [ -z "$players" ]; then busy="cannot read /status"; return 1; fi
+      if [ "$rooms" -eq 0 ] && [ "$players" -eq 0 ]; then return 0; fi
+      busy="$rooms rooms, $players players"; return 1 ;;
+    503) return 0 ;;
+    *)
+      if container_running; then busy="status endpoint does not answer (HTTP $code)"; return 1; fi
+      return 0 ;;
+  esac
+}
+
+# UPDATE_FORCE_AFTER in seconds: 90s, 30m, 3h, 1d; empty or 0 = never.
+force_after() {
+  local value
+  value="$(setting UPDATE_FORCE_AFTER "")"
+  [ -n "$value" ] || { echo 0; return; }
+  [[ "$value" =~ ^([0-9]+)([smhd]?)$ ]] || die "UPDATE_FORCE_AFTER must look like 3h or 30m, got '$value'"
+  case "${BASH_REMATCH[2]}" in
+    d) echo $((BASH_REMATCH[1] * 86400)) ;;
+    h) echo $((BASH_REMATCH[1] * 3600)) ;;
+    m) echo $((BASH_REMATCH[1] * 60)) ;;
+    *) echo $((BASH_REMATCH[1])) ;;
+  esac
+}
+
+# Drain: haulnetd reports accepting: false while $WORK_DIR/drain exists (Haulnet then starts no new games here).
+# The file lives inside the container, so a recreated container starts undrained.
+drain() { docker exec "$CONTAINER" sh -c 'touch "${WORK_DIR:-/var/lib/haulnet}/drain"' 2>/dev/null || true; }
+undrain() { docker exec "$CONTAINER" sh -c 'rm -f "${WORK_DIR:-/var/lib/haulnet}/drain"' 2>/dev/null || true; }
+
+# $state/pending holds "<image id> <epoch seconds when first seen>" while an update waits for players to leave.
+clear_pending() {
+  if [ -f "$state/pending" ]; then rm -f "$state/pending"; undrain; fi
+}
+
+# UPDATE_WINDOW=HH:MM-HH:MM (local time, may cross midnight); empty means any time.
+in_window() {
+  local window from to now
+  window="$(setting UPDATE_WINDOW "")"
+  [ -n "$window" ] || return 0
+  [[ "$window" =~ ^([0-2][0-9]):([0-5][0-9])-([0-2][0-9]):([0-5][0-9])$ ]] || die "UPDATE_WINDOW must look like 03:00-07:00, got '$window'"
+  from=$((10#${BASH_REMATCH[1]}${BASH_REMATCH[2]})); to=$((10#${BASH_REMATCH[3]}${BASH_REMATCH[4]}))
+  now=$((10#$(date +%H%M)))
+  if [ "$from" -le "$to" ]; then [ "$now" -ge "$from" ] && [ "$now" -lt "$to" ]
+  else [ "$now" -ge "$from" ] || [ "$now" -lt "$to" ]; fi
+}
+
+semver() { [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
+version_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]; }
+
+# Waits until the container runs the given image and answers /healthz and /status.
+healthy() {
+  local deadline=$((SECONDS + health_timeout)) url
+  url="$(status_url)"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if [ "$(running_image)" = "$1" ] && container_running \
+      && [ "$(curl -s -m 3 "$url/healthz" || true)" = ok ] \
+      && [ -n "$(json_int rooms "$(curl -s -m 3 "$url/status" || true)")" ]; then
+      return 0
+    fi
+    sleep 3
+  done
+  return 1
+}
+
+# Local tags keep the images we may need again: once the channel tag moves to a new image, the old one is no longer
+# reachable by name (and with Docker's containerd image store not even by id).
+RUNNING_TAG=haulnet-update/running:latest
+PREVIOUS_TAG=haulnet-update/previous:latest
+
+# Points the compose image tag at an image we already have and recreates the container from it.
+start_image() {
+  docker tag "$1" "$2"
+  compose up -d --pull never "$SERVICE" >/dev/null
+}
+
+remember() { printf '%s %s\n' "$(date -Is)" "$*" >"$state/last"; }
+
+cmd_run() {
+  local force=0
+  [ "${1:-}" = --force ] && force=1
+  mkdir -p "$state"
+  exec 9>"$state/lock"
+  flock -n 9 || { log "another update is running"; return 0; }
+
+  if [ "$force" = 0 ] && ! in_window; then log "outside UPDATE_WINDOW $(setting UPDATE_WINDOW "")"; return 0; fi
+
+  local ref old new old_version="" new_version source from=nothing
+  ref="$(image_ref)"
+  [ -n "$ref" ] || die "no image in $dir/docker-compose.yml"
+  old="$(running_image)"
+  if [ -n "$old" ]; then
+    docker tag "$old" "$RUNNING_TAG"
+    old_version="$(label "$RUNNING_TAG" "$VERSION_LABEL")"
+    from="$(describe "$RUNNING_TAG")"
+  fi
+  compose pull --quiet "$SERVICE" || { remember "pull failed"; die "pull of $ref failed"; }
+  new="$(docker image inspect -f '{{.Id}}' "$ref")"
+
+  # keep_old: put the compose tag back on the running image, so a manual "docker compose up" changes nothing.
+  keep_old() { [ -z "$old" ] || docker tag "$RUNNING_TAG" "$ref"; }
+
+  if [ "$new" = "$old" ]; then log "up to date: $from"; clear_pending; remember "up to date"; return 0; fi
+  if [ -f "$state/bad" ] && grep -qx "$new" "$state/bad"; then
+    log "skipped $(describe "$ref"): it was rolled back before"
+    keep_old; clear_pending; remember "skipped rolled-back image"; return 0
+  fi
+
+  source="$(label "$ref" "$SOURCE_LABEL")"; new_version="$(label "$ref" "$VERSION_LABEL")"
+  if [ "$source" != "$EXPECTED_SOURCE" ] || ! semver "$new_version"; then
+    log "refused $ref: source '$source', version '$new_version' (expected a haulnet-server release)"
+    keep_old; clear_pending; remember refused; return 1
+  fi
+  if [ "$force" = 0 ] && [ -n "$old" ] && semver "$old_version"; then
+    if [ "${new_version%%.*}" != "${old_version%%.*}" ] || ! version_ge "$new_version" "$old_version"; then
+      log "refused $new_version over $old_version: only newer versions with the same major version update by themselves (--force installs it)"
+      keep_old; clear_pending; remember refused; return 1
+    fi
+  fi
+
+  local busy="" since limit waited
+  if [ "$force" = 0 ] && ! server_empty; then
+    since=""
+    if [ -f "$state/pending" ] && [ "$(cut -d' ' -f1 "$state/pending")" = "$new" ]; then
+      since="$(cut -d' ' -f2 "$state/pending")"
+    fi
+    [ -n "$since" ] || { since="$(date +%s)"; printf '%s %s\n' "$new" "$since" >"$state/pending"; }
+    drain
+    limit="$(force_after)"; waited=$(( $(date +%s) - since ))
+    if [ "$limit" -gt 0 ] && [ "$waited" -ge "$limit" ]; then
+      log "forcing the update: waited $((waited / 60)) min for an empty server ($busy)"
+    else
+      log "deferred: $busy; draining (no new games here)$([ "$limit" -gt 0 ] && printf '; forced in %s min' $(((limit - waited + 59) / 60)))"
+      keep_old; remember deferred; return 0
+    fi
+  fi
+
+  local to
+  to="$(describe "$ref")"
+  log "updating from $from to $to"
+  if [ -n "$old" ]; then
+    docker tag "$RUNNING_TAG" "$PREVIOUS_TAG"
+    printf '%s\n' "$old" >"$state/previous"
+  fi
+  rm -f "$state/pending"
+  compose up -d --pull never "$SERVICE" >/dev/null
+  if healthy "$new"; then
+    docker tag "$ref" "$RUNNING_TAG"
+    log "updated to $to"; remember "updated to $new_version"
+    docker image prune -f --filter "label=$SOURCE_LABEL=$EXPECTED_SOURCE" >/dev/null || true
+    return 0
+  fi
+
+  printf '%s\n' "$new" >>"$state/bad"
+  if [ -z "$old" ]; then remember "new image unhealthy"; die "$to did not become healthy and there is no previous image"; fi
+  log "$to did not become healthy within ${health_timeout}s, rolling back"
+  start_image "$PREVIOUS_TAG" "$ref"
+  if healthy "$old"; then
+    log "rolled back to $from"; remember "rolled back from $new_version"; return 1
+  fi
+  remember "rollback failed"; die "rollback to $from is not healthy either; see docker compose logs"
+}
+
+cmd_rollback() {
+  mkdir -p "$state"
+  local ref old previous
+  previous="$(docker image inspect -f '{{.Id}}' "$PREVIOUS_TAG" 2>/dev/null)" || die "no previous image recorded"
+  ref="$(image_ref)"; old="$(running_image)"
+  [ "$old" != "$previous" ] || die "the previous image is already running"
+  [ -z "$old" ] || printf '%s\n' "$old" >>"$state/bad"
+  start_image "$PREVIOUS_TAG" "$ref"
+  healthy "$previous" || die "$(describe "$PREVIOUS_TAG") is not healthy; see docker compose logs"
+  docker tag "$PREVIOUS_TAG" "$RUNNING_TAG"
+  log "rolled back to $(describe "$PREVIOUS_TAG"); the image it replaced will not be installed again"
+  remember "manual rollback"
+}
+
+cmd_enable() {
+  [ "$(id -u)" = 0 ] || die "enable needs root (sudo)"
+  command -v systemctl >/dev/null || die "systemd is required for automatic updates"
+  cat >/etc/systemd/system/haulnet-update.service <<EOF
+[Unit]
+Description=Update the haulnet-server image when the server is empty
+Documentation=https://github.com/haulnet/haulnet-server#updating
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+Environment=HAULNET_DIR=$dir
+ExecStart=$script run
+EOF
+  cat >/etc/systemd/system/haulnet-update.timer <<'EOF'
+[Unit]
+Description=Check for haulnet-server updates every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now haulnet-update.timer
+  log "automatic updates enabled for $dir; log: journalctl -u haulnet-update"
+}
+
+cmd_disable() {
+  [ "$(id -u)" = 0 ] || die "disable needs root (sudo)"
+  systemctl disable --now haulnet-update.timer 2>/dev/null || true
+  rm -f /etc/systemd/system/haulnet-update.timer /etc/systemd/system/haulnet-update.service
+  systemctl daemon-reload
+  log "automatic updates disabled"
+}
+
+cmd_status() {
+  local img
+  if command -v systemctl >/dev/null && systemctl is-enabled --quiet haulnet-update.timer 2>/dev/null; then
+    log "automatic updates: on"
+    systemctl list-timers haulnet-update.timer --no-pager | sed -n 2p
+  else
+    log "automatic updates: off"
+  fi
+  log "image: $(image_ref)"
+  img="$(running_image)"
+  if [ -n "$img" ]; then log "running: $(describe "$img")"; else log "running: no container"; fi
+  [ ! -f "$state/last" ] || log "last run: $(cat "$state/last")"
+}
+
+case "${1:-run}" in
+  run) shift || true; cmd_run "$@" ;;
+  --force) cmd_run --force ;;
+  enable) cmd_enable ;;
+  disable) cmd_disable ;;
+  status) cmd_status ;;
+  rollback) cmd_rollback ;;
+  -h|--help|help) sed -n '2,13p' "$script" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '$1' (run, enable, disable, status, rollback)" ;;
+esac

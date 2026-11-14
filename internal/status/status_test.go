@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +83,23 @@ func TestStatusPublishesOnlyCounts(t *testing.T) {
 	}
 	if r.Rooms != 2 || r.Players != 5 || r.Accepting || r.Name != "test-1" || r.Luxon != "v1.5" || r.UptimeSeconds < 59 {
 		t.Fatalf("unexpected report %+v", r)
+	}
+}
+
+func TestDrainFileStopsAccepting(t *testing.T) {
+	drain := filepath.Join(t.TempDir(), "drain")
+	svc := &Service{Source: &countingSource{}, DrainFile: drain}
+
+	r, err := svc.Report(context.Background())
+	if err != nil || !r.Accepting || r.Draining {
+		t.Fatalf("without drain file: %+v, %v", r, err)
+	}
+	if err := os.WriteFile(drain, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err = svc.Report(context.Background())
+	if err != nil || r.Accepting || !r.Draining {
+		t.Fatalf("with drain file: %+v, %v", r, err)
 	}
 }
 

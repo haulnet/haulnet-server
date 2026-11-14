@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,7 @@ type Report struct {
 	MaxPlayers    int     `json:"max_players"`
 	CPUBusy       float64 `json:"cpu_busy"`
 	Accepting     bool    `json:"accepting"`
+	Draining      bool    `json:"draining"`
 	UptimeSeconds int64   `json:"uptime_s"`
 }
 
@@ -175,6 +177,9 @@ type Service struct {
 	MaxPlayers   int
 	Started      time.Time
 	Now          func() time.Time
+	// DrainFile, when it exists, makes the server report accepting: false so Haulnet starts no new games here
+	// while running games continue. haulnet-update creates it while it waits for the server to empty.
+	DrainFile string
 
 	mu        sync.Mutex
 	cached    Counts
@@ -209,7 +214,8 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	accepting := (s.MaxRooms == 0 || c.Rooms < s.MaxRooms) && (s.MaxPlayers == 0 || c.Players < s.MaxPlayers)
+	draining := s.draining()
+	accepting := !draining && (s.MaxRooms == 0 || c.Rooms < s.MaxRooms) && (s.MaxPlayers == 0 || c.Players < s.MaxPlayers)
 	return Report{
 		HaulnetServer: s.Version,
 		Luxon:         s.LuxonVersion,
@@ -220,8 +226,17 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 		MaxPlayers:    s.MaxPlayers,
 		CPUBusy:       float64(int(c.CPUBusy*1000)) / 1000,
 		Accepting:     accepting,
+		Draining:      draining,
 		UptimeSeconds: int64(s.now().Sub(s.Started).Seconds()),
 	}, nil
+}
+
+func (s *Service) draining() bool {
+	if s.DrainFile == "" {
+		return false
+	}
+	_, err := os.Stat(s.DrainFile)
+	return err == nil
 }
 
 // Handler serves GET /status and GET /healthz. Everything else is 404.
