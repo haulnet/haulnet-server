@@ -21,8 +21,8 @@ server, BSD-3-Clause) with a configuration for R.E.P.O. and a small helper, `hau
 - Linux x86-64 (Docker or plain systemd), or Windows x64.
 - A public IPv4 address, UDP not filtered by the provider. IPv6 works too, but an IPv6-only server is not
   enough: most players have no IPv6 (in Russia about nine in ten).
-- Bandwidth: roughly 2–4 Mbit/s outgoing per 6-player room. **This is an estimate**, not a measurement;
-  an unmetered port of 100 Mbit/s or more is recommended. DDoS protection that covers UDP is strongly
+- Bandwidth: roughly 2–4 Mbit/s outgoing per 6-player room; an unmetered port of 100 Mbit/s or more is
+  recommended. DDoS protection that covers UDP is strongly
   recommended for public servers.
 - CPU and memory are modest: LuxonServer is a single-threaded C++ program.
 
