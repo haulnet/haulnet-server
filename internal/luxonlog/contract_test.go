@@ -7,11 +7,9 @@ import (
 	"testing"
 )
 
-// Recorded output of the LuxonServer binaries haulnetd can run: "v1.5-*" is the niansa v1.5 release pinned in
-// luxon.lock, "fork-a1a2-*" the haulnet/LuxonServer fork with "fatal bind" (A1) and "exclusive bind" (A2). The
-// port-busy runs had UDP 27000 held by another socket; the start runs used the config RenderLuxonConfig writes.
-// The fork keeps v1.5's "Failed to bind" line and adds a fatal line on stderr and exit code 1, so this watcher
-// stays correct for both until every pin has the fork.
+// Recorded output of the LuxonServer release pinned in luxon.lock (niansa v1.5). The port-busy run had UDP 27000
+// held by another socket; the start run used the config RenderLuxonConfig writes. v1.5 keeps running after
+// "Failed to bind", so this watcher is what stops haulnetd.
 
 func watch(t *testing.T, name string) (string, bool) {
 	t.Helper()
@@ -37,9 +35,7 @@ func watch(t *testing.T, name string) (string, bool) {
 
 func TestRecordedPortBusyOutputIsReported(t *testing.T) {
 	for name, want := range map[string]string{
-		"v1.5-linux-port-busy.stdout.log":      "Failed to bind NameServer to port 27000!",
-		"fork-a1a2-linux-port-busy.stdout.log": "Failed to bind NameServer to port 27000!",
-		"fork-a1a2-linux-port-busy.stderr.log": "Failed to bind NameServer to UDP port 27000: Address in use",
+		"v1.5-linux-port-busy.stdout.log": "Failed to bind NameServer to port 27000!",
 	} {
 		got, ok := watch(t, name)
 		if !ok || got != want {
@@ -49,7 +45,7 @@ func TestRecordedPortBusyOutputIsReported(t *testing.T) {
 }
 
 func TestRecordedStartOutputIsNotReported(t *testing.T) {
-	for _, name := range []string{"v1.5-windows-start.stdout.log", "fork-a1a2-windows-start.stdout.log"} {
+	for _, name := range []string{"v1.5-windows-start.stdout.log"} {
 		if got, ok := watch(t, name); ok {
 			t.Errorf("%s: unexpected failure %q", name, got)
 		}
