@@ -2,7 +2,11 @@
 
 A ready-to-run game server for [Haulnet](https://github.com/haulnet/haulnet-repo), the mod that lets
 R.E.P.O. players play without Photon Cloud. Run it on a VPS or a home server, and players with Haulnet can
-host their games on it.
+host their games on it. The official Haulnet servers run this same package.
+
+Keep it for your friends (they add it with "+ Server by address" in the game) or list it for everyone in the
+public [server list](https://github.com/haulnet/haulnet-servers), which asks you to keep it online around the clock.
+The difference: [haulnet.cc/docs/server](https://haulnet.cc/docs/server/#private-or-public).
 
 It is the unmodified [LuxonServer](https://github.com/niansa/LuxonServer) (an open-source Photon-compatible
 server, BSD-3-Clause) with a configuration for R.E.P.O. and a small helper, `haulnetd`, that:
@@ -109,7 +113,7 @@ Stop the server by closing its console window. Ending only `haulnetd.exe` (Task 
 
 ## Firewall
 
-Allow inbound UDP 27000–27002 and TCP 27080, for example with ufw:
+If the server has a firewall, allow inbound UDP 27000–27002 and TCP 27080, for example with ufw:
 
 ```bash
 sudo ufw allow 27000:27002/udp
@@ -148,7 +152,7 @@ do not publish them.
 Releases pin one LuxonServer version (see [`luxon.lock`](luxon.lock)). When R.E.P.O. changes its Photon
 version, a new release follows; Haulnet hides servers with an incompatible version. Every change to this
 repository's `main` branch that passes the tests is released as the next patch version, so releases are frequent
-and small.
+and small; changes to Markdown files alone wait for the next release.
 
 ### Update once (Docker)
 
@@ -202,8 +206,12 @@ docker build -t haulnet-server:dev .
 LuxonServer is downloaded from its GitHub release at build time and checked against the SHA-256 values in
 `luxon.lock`; it is never committed.
 
+## Disclaimer
+
+Haulnet is an independent fan project. It is not affiliated with or endorsed by semiwork (developers of
+R.E.P.O.) or Exit Games GmbH. "R.E.P.O." and "Photon" are trademarks of their respective owners and are used
+only to describe compatibility. Haulnet is not affiliated with LuxonServer or its contributors.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). Redistributed components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-R.E.P.O. and Photon are named only to describe compatibility; this project is not affiliated with their
-owners or with LuxonServer.
