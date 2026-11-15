@@ -52,7 +52,7 @@ All settings are environment variables (or `KEY=VALUE` lines in `haulnet-server.
 | `WORK_DIR` | `$STATE_DIRECTORY` or `.` | Where LuxonServer's generated `config.yml` is written. |
 | `LUXON_BIN` | `luxon_server` next to haulnetd | Path to the LuxonServer binary. |
 
-A private or loopback `EXTERNAL_ADDRESS` is allowed (LAN parties, VPNs) and logged as a warning.
+A private or loopback `EXTERNAL_ADDRESS` is allowed (a LAN party, a Radmin VPN network) and logged as a warning.
 
 ## Run with Docker
 
