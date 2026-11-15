@@ -15,7 +15,8 @@ server, BSD-3-Clause) with a configuration for R.E.P.O. and a small helper, `hau
 ## Requirements
 
 - Linux x86-64 (Docker or plain systemd), or Windows x64.
-- A public IPv4 address (IPv6 works too), UDP not filtered by the provider.
+- A public IPv4 address, UDP not filtered by the provider. IPv6 works too, but an IPv6-only server is not
+  enough: most players have no IPv6 (in Russia about nine in ten).
 - Bandwidth: roughly 2–4 Mbit/s outgoing per 6-player room. **This is an estimate**, not a measurement;
   an unmetered port of 100 Mbit/s or more is recommended. DDoS protection that covers UDP is strongly
   recommended for public servers.
@@ -55,6 +56,9 @@ A private or loopback `EXTERNAL_ADDRESS` is allowed (LAN parties, VPNs) and logg
 
 ## Run with Docker
 
+Install [Docker Engine](https://docs.docker.com/engine/install/) with its compose plugin first. The commands in
+this README use `sudo`; in a root shell (a fresh Debian has no `sudo`), leave it out.
+
 ```bash
 mkdir haulnet-server && cd haulnet-server
 base=https://github.com/haulnet/haulnet-server/releases/latest/download
@@ -72,13 +76,22 @@ release. To stay on one release, put `HAULNET_SERVER_TAG=0.1.0` into a file name
 
 ## Run with systemd (no Docker)
 
+Download the tarball and `SHA256SUMS` from the
+[latest release](https://github.com/haulnet/haulnet-server/releases/latest) and check the tarball before installing
+it. Set `version` to that release's version without the `v`:
+
 ```bash
-tar -xzf haulnet-server-<version>-linux-x86_64.tar.gz
+version=X.Y.Z    # e.g. 0.1.4
+base=https://github.com/haulnet/haulnet-server/releases/download/v$version
+curl -fsSLO "$base/haulnet-server-$version-linux-x86_64.tar.gz"
+curl -fsSLO "$base/SHA256SUMS"
+sha256sum --ignore-missing -c SHA256SUMS    # must print "OK" for the tarball
+tar -xzf haulnet-server-$version-linux-x86_64.tar.gz
 sudo install -d /opt/haulnet-server /etc/haulnet-server
-sudo install -m 755 haulnet-server-<version>/haulnetd haulnet-server-<version>/luxon_server /opt/haulnet-server/
-sudo install -m 644 haulnet-server-<version>/haulnet-server.env.example /etc/haulnet-server/haulnet-server.env
+sudo install -m 755 haulnet-server-$version/haulnetd haulnet-server-$version/luxon_server /opt/haulnet-server/
+sudo install -m 644 haulnet-server-$version/haulnet-server.env.example /etc/haulnet-server/haulnet-server.env
 sudo nano /etc/haulnet-server/haulnet-server.env    # set EXTERNAL_ADDRESS
-sudo install -m 644 haulnet-server-<version>/haulnet-server.service /etc/systemd/system/
+sudo install -m 644 haulnet-server-$version/haulnet-server.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now haulnet-server
 journalctl -u haulnet-server -f
 ```
@@ -90,6 +103,9 @@ The unit runs as a dynamic unprivileged user with a read-only system.
 Unzip `haulnet-server-<version>-windows-x86_64.zip`, run `start.bat` once (it creates
 `haulnet-server.env`), set `EXTERNAL_ADDRESS` in that file and run `start.bat` again. Allow
 `luxon_server.exe` (UDP) and `haulnetd.exe` (TCP 27080) in Windows Firewall when asked.
+
+Stop the server by closing its console window. Ending only `haulnetd.exe` (Task Manager, `taskkill`) leaves
+`luxon_server.exe` running.
 
 ## Firewall
 
