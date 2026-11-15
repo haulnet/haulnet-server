@@ -308,6 +308,16 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+nlohmann/json also contains code from other authors (stated in json.hpp):
+
+- UTF-8 decoder, Copyright (c) 2008-2009 Bjoern Hoehrmann <bjoern@hoehrmann.de>,
+  MIT License (the text above, with this copyright line).
+- Grisu2 floating-point formatting, Copyright (c) 2009 Florian Loitsch,
+  MIT License (the text above, with this copyright line).
+- integer_sequence utilities from Google Abseil (https://github.com/abseil/abseil-cpp),
+  Copyright 2018 The Abseil Authors, Apache License 2.0 (text in the Mbed TLS section).
+- Hedley, Copyright 2016-2021 Evan Nemerson, CC0-1.0 (public domain dedication, no conditions).
 ==============================================================================
 mini-yaml
 Version: as bundled in LuxonServer v1.5 (src/yaml.cpp, src/yaml.hpp)

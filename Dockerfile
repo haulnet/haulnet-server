@@ -12,7 +12,8 @@ ARG VERSION=dev
 ARG LUXON_VERSION=v1.5
 RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION} -X main.luxonVersion=${LUXON_VERSION}" \
-      -o /out/haulnetd ./cmd/haulnetd
+      -o /out/haulnetd ./cmd/haulnetd \
+ && cp "$(go env GOROOT)/LICENSE" /out/Go-LICENSE.txt
 
 FROM alpine:${ALPINE_VERSION} AS luxon
 ARG LUXON_VERSION=v1.5
@@ -35,7 +36,7 @@ RUN adduser -D -H -u 10001 -s /sbin/nologin haulnet \
 COPY --from=luxon /luxon_server /opt/haulnet/luxon_server
 COPY --from=luxon /LICENSE /opt/haulnet/LuxonServer-LICENSE.txt
 COPY --from=luxon /NOTICES /opt/haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt
-COPY --from=build /out/haulnetd /opt/haulnet/haulnetd
+COPY --from=build /out/haulnetd /out/Go-LICENSE.txt /opt/haulnet/
 COPY LICENSE THIRD_PARTY_NOTICES.md /opt/haulnet/
 ENV WORK_DIR=/var/lib/haulnet
 USER haulnet

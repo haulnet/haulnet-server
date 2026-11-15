@@ -45,7 +45,7 @@ jobs:
       - name: License files next to the binary
         run: |
           docker run --rm --entrypoint ls haulnet-server:ci -l /opt/haulnet/LICENSE /opt/haulnet/THIRD_PARTY_NOTICES.md \
-            /opt/haulnet/LuxonServer-LICENSE.txt /opt/haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt
+            /opt/haulnet/LuxonServer-LICENSE.txt /opt/haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt /opt/haulnet/Go-LICENSE.txt
           docker run --rm --entrypoint head haulnet-server:ci -n 1 /opt/haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt
       - name: Start container
         run: |

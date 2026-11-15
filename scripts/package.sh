@@ -33,8 +33,8 @@ fetch "https://raw.githubusercontent.com/niansa/LuxonServer/$LUXON_VERSION/LICEN
 
 # Each LuxonServer binary also contains Luxon and other libraries (and, on Linux, musl and the GCC runtime) whose
 # licenses ask binary redistributions to carry their notices. The files are written for one LuxonServer release and
-# one build each: review them whenever luxon.lock changes, then update their first line. The Windows file has the same
-# text as haulnet-repo's mod/Haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt (the same binary); change both together.
+# one build each: review them whenever luxon.lock changes, then update their first line. The Windows file describes the
+# same binary as haulnet-repo's mod/Haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt; keep the two texts equal.
 notices() { # goos ext
   local file="dist/LuxonServer-THIRD_PARTY_NOTICES.$1.txt" first
   first="$(head -n 1 "$file")"
@@ -54,6 +54,8 @@ stage() { # dir goos ext
   cp "$cache/luxon_server$3" "$1/luxon_server$3"
   cp "$cache/LICENSE" "$1/LuxonServer-LICENSE.txt"
   cp "dist/LuxonServer-THIRD_PARTY_NOTICES.$2.txt" "$1/LuxonServer-THIRD_PARTY_NOTICES.txt"
+  # haulnetd contains the Go standard library and runtime (BSD-3-Clause): ship the license of the toolchain used.
+  cp "$(go env GOROOT)/LICENSE" "$1/Go-LICENSE.txt"
   cp LICENSE THIRD_PARTY_NOTICES.md README.md dist/haulnet-server.env.example "$1/"
 }
 
