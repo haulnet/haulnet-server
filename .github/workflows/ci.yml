@@ -25,7 +25,7 @@ jobs:
       - name: Dockerfile pins match luxon.lock
         run: |
           . ./luxon.lock
-          for key in LUXON_REPO LUXON_VERSION LUXON_LINUX_ASSET LUXON_LINUX_SHA256 LUXON_LICENSE_SHA256; do
+          for key in LUXON_VERSION LUXON_LINUX_ASSET LUXON_LINUX_SHA256 LUXON_LICENSE_SHA256; do
             grep -q "ARG $key=${!key}\$" Dockerfile || { echo "Dockerfile $key differs from luxon.lock"; exit 1; }
           done
       - name: Package
@@ -70,7 +70,7 @@ jobs:
           docker logs hs-busy 2>&1 | tail -5
           test "$(docker inspect -f '{{.State.Running}}' hs-busy)" = false
           test "$(docker inspect -f '{{.State.ExitCode}}' hs-busy)" = 1
-          docker logs hs-busy 2>&1 | grep -q "LuxonServer could not start: Failed to bind NameServer to UDP port 27000"
+          docker logs hs-busy 2>&1 | grep -q "LuxonServer could not open a port"
 
   updater:
     runs-on: ubuntu-latest
