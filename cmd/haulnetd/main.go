@@ -1,5 +1,5 @@
 // Command haulnetd runs a Haulnet community server: it renders LuxonServer's config from the environment,
-// runs the unmodified LuxonServer binary as a child process and serves a read-only status endpoint.
+// runs the pinned LuxonServer binary as a child process and serves a read-only status endpoint.
 package main
 
 import (
@@ -19,14 +19,13 @@ import (
 	"time"
 
 	"github.com/haulnet/haulnet-server/internal/config"
-	"github.com/haulnet/haulnet-server/internal/luxonlog"
 	"github.com/haulnet/haulnet-server/internal/status"
 )
 
 // Set at build time with -ldflags "-X main.version=... -X main.luxonVersion=...".
 var (
 	version      = "dev"
-	luxonVersion = "v1.5"
+	luxonVersion = "v1.5-haulnet.1"
 )
 
 func main() {
@@ -99,11 +98,9 @@ func run(cfg config.Config, luxonConfig string) int {
 
 	cmd := exec.Command(binary)
 	cmd.Dir = cfg.WorkDir
-	// LuxonServer keeps running when it cannot open a port; the watcher lets haulnetd stop instead.
-	stdout := &luxonlog.Watcher{Out: os.Stdout}
-	stderr := &luxonlog.Watcher{Out: os.Stderr}
-	cmd.Stdout, cmd.Stderr = stdout, stderr
-	bindFailures := mergeFailures(stdout, stderr)
+	// LuxonServer exits with code 1 when it cannot start (a port taken, a config error) and says why on stderr.
+	stderr := &fatalLine{Out: os.Stderr}
+	cmd.Stdout, cmd.Stderr = os.Stdout, stderr
 	if err := cmd.Start(); err != nil {
 		log.Printf("cannot start LuxonServer (%s): %v", binary, err)
 		return 1
@@ -156,20 +153,12 @@ func run(cfg config.Config, luxonConfig string) int {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 
 	var waitErr error
-	failed := false
 	select {
 	case waitErr = <-exited:
-		log.Printf("LuxonServer exited: %v", describeExit(waitErr))
-	case line := <-bindFailures:
-		log.Printf("LuxonServer could not open a port (%q): another program is probably using it. "+
-			"Players cannot connect, so haulnet-server stops; free the port and start it again.", line)
-		failed = true
-		stopChild(cmd)
-		select {
-		case waitErr = <-exited:
-		case <-time.After(10 * time.Second):
-			_ = cmd.Process.Kill()
-			waitErr = <-exited
+		if message := stderr.Message(); waitErr != nil && message != "" {
+			log.Print(explainFailure(message))
+		} else {
+			log.Printf("LuxonServer exited: %v", describeExit(waitErr))
 		}
 	case sig := <-signals:
 		log.Printf("received %v, stopping LuxonServer", sig)
@@ -190,8 +179,6 @@ func run(cfg config.Config, luxonConfig string) int {
 
 	var exitErr *exec.ExitError
 	switch {
-	case failed:
-		return 1
 	case waitErr == nil:
 		return 0
 	case errors.As(waitErr, &exitErr) && exitErr.ExitCode() > 0:
@@ -199,21 +186,6 @@ func run(cfg config.Config, luxonConfig string) int {
 	default:
 		return 1
 	}
-}
-
-// mergeFailures delivers the first bind failure seen on either output stream.
-func mergeFailures(a, b *luxonlog.Watcher) <-chan string {
-	out := make(chan string, 1)
-	forward := func(w *luxonlog.Watcher) {
-		line := <-w.Failures()
-		select {
-		case out <- line:
-		default:
-		}
-	}
-	go forward(a)
-	go forward(b)
-	return out
 }
 
 // checkHealth queries the local status endpoint. It needs only STATUS_ADDRESS, so it works without the

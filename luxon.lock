@@ -1,8 +1,9 @@
-# Pinned LuxonServer release (unmodified upstream binaries, BSD-3-Clause).
+# Pinned LuxonServer release: Haulnet's fork haulnet/LuxonServer (BSD-3-Clause, release binaries, SHA-256 checked).
 # Read by scripts/package.sh and CI; the Dockerfile has the same values as build-arg defaults.
-LUXON_VERSION=v1.5
+LUXON_REPO=haulnet/LuxonServer
+LUXON_VERSION=v1.5-haulnet.1
 LUXON_LINUX_ASSET=luxon_server.musl-static.release.linux-x86_64
-LUXON_LINUX_SHA256=012d55eec3001918fe988d9315920470842de6305ed4bdc132fabaf817fe6f96
+LUXON_LINUX_SHA256=71c48f9790b35c71ae7f44d36a4e40e0885422db6e8740c2aa6274a328670c74
 LUXON_WINDOWS_ASSET=luxon_server.msvc.release.exe
-LUXON_WINDOWS_SHA256=d5b272f49b21757d36094f30f986e4f4d2f1502eec79be33ce998ea19fff3286
+LUXON_WINDOWS_SHA256=c7b0a0954b7a3080631d886a39c7d8ab2961695248ddb945c95319851e6d1e99
 LUXON_LICENSE_SHA256=87ca0810c9a251d379ca432fdcde1b8168e4f172a474b46a32be2386e022e766
