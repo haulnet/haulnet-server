@@ -1,7 +1,8 @@
 name: Auto release
 
-# Every commit on main that passes CI becomes the next patch release, so official servers (which follow
-# :latest with haulnet-update) pick it up by themselves. Minor and major versions are tagged by hand.
+# Every commit on main that passes CI and changes more than docs or repository settings becomes the next patch
+# release, so official servers (which follow :latest with haulnet-update) pick it up by themselves. Minor and major
+# versions are tagged by hand.
 on:
   workflow_run:
     workflows: [CI]
@@ -42,8 +43,11 @@ jobs:
           if [ -z "$last" ]; then
             echo "no release yet: tag the first version by hand"; exit 0
           fi
-          if ! git diff --name-only "$last" "$SHA" | grep -qv '\.md$'; then
-            echo "only documentation changed since $last"; exit 0
+          # Files that do not change what a server runs: docs and repository settings. A release with only these
+          # would restart official servers for nothing; they go out with the next release that changes code.
+          non_code='\.md$|(^|/)\.git(ignore|attributes)$|^\.editorconfig$|^LICENSE$'
+          if ! git diff --name-only "$last" "$SHA" | grep -qvE "$non_code"; then
+            echo "only documentation or repository settings changed since $last"; exit 0
           fi
           IFS=. read -r major minor patch <<<"${last#v}"
           tag="v$major.$minor.$((patch + 1))"
