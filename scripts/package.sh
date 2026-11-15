@@ -31,6 +31,21 @@ fetch "$base/$LUXON_LINUX_ASSET" "$cache/luxon_server" "$LUXON_LINUX_SHA256"
 fetch "$base/$LUXON_WINDOWS_ASSET" "$cache/luxon_server.exe" "$LUXON_WINDOWS_SHA256"
 fetch "https://raw.githubusercontent.com/niansa/LuxonServer/$LUXON_VERSION/LICENSE" "$cache/LICENSE" "$LUXON_LICENSE_SHA256"
 
+# Each LuxonServer binary also contains Luxon and other libraries (and, on Linux, musl and the GCC runtime) whose
+# licenses ask binary redistributions to carry their notices. The files are written for one LuxonServer release and
+# one build each: review them whenever luxon.lock changes, then update their first line. The Windows file describes the
+# same binary as haulnet-repo's mod/Haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt; keep the two texts equal.
+notices() { # goos ext
+  local file="dist/LuxonServer-THIRD_PARTY_NOTICES.$1.txt" first
+  first="$(head -n 1 "$file")"
+  if [ "$first" != "Third-party notices for luxon_server$2 (LuxonServer $LUXON_VERSION)" ]; then
+    echo "$file is not written for LuxonServer $LUXON_VERSION (first line: $first); review it for this release" >&2
+    exit 1
+  fi
+}
+notices linux ""
+notices windows ".exe"
+
 ldflags="-s -w -X main.version=$version -X main.luxonVersion=$LUXON_VERSION"
 
 stage() { # dir goos ext
@@ -38,6 +53,9 @@ stage() { # dir goos ext
   GOOS="$2" GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o "$1/haulnetd$3" ./cmd/haulnetd
   cp "$cache/luxon_server$3" "$1/luxon_server$3"
   cp "$cache/LICENSE" "$1/LuxonServer-LICENSE.txt"
+  cp "dist/LuxonServer-THIRD_PARTY_NOTICES.$2.txt" "$1/LuxonServer-THIRD_PARTY_NOTICES.txt"
+  # haulnetd contains the Go standard library and runtime (BSD-3-Clause): ship the license of the toolchain used.
+  cp "$(go env GOROOT)/LICENSE" "$1/Go-LICENSE.txt"
   cp LICENSE THIRD_PARTY_NOTICES.md README.md dist/haulnet-server.env.example "$1/"
 }
 

@@ -12,7 +12,8 @@ ARG VERSION=dev
 ARG LUXON_VERSION=v1.5
 RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION} -X main.luxonVersion=${LUXON_VERSION}" \
-      -o /out/haulnetd ./cmd/haulnetd
+      -o /out/haulnetd ./cmd/haulnetd \
+ && cp "$(go env GOROOT)/LICENSE" /out/Go-LICENSE.txt
 
 FROM alpine:${ALPINE_VERSION} AS luxon
 ARG LUXON_VERSION=v1.5
@@ -24,13 +25,18 @@ RUN wget -q -O /luxon_server "https://github.com/niansa/LuxonServer/releases/dow
  && wget -q -O /LICENSE "https://raw.githubusercontent.com/niansa/LuxonServer/${LUXON_VERSION}/LICENSE" \
  && echo "${LUXON_LICENSE_SHA256}  /LICENSE" | sha256sum -c - \
  && chmod 755 /luxon_server
+# Notices of the libraries inside the binary, written for one LuxonServer release (see scripts/package.sh).
+COPY dist/LuxonServer-THIRD_PARTY_NOTICES.linux.txt /NOTICES
+RUN head -n 1 /NOTICES | grep -qxF "Third-party notices for luxon_server (LuxonServer ${LUXON_VERSION})" \
+ || { echo "LuxonServer-THIRD_PARTY_NOTICES.linux.txt is not written for LuxonServer ${LUXON_VERSION}" >&2; exit 1; }
 
 FROM alpine:${ALPINE_VERSION}
 RUN adduser -D -H -u 10001 -s /sbin/nologin haulnet \
  && mkdir -p /var/lib/haulnet && chown haulnet:haulnet /var/lib/haulnet
 COPY --from=luxon /luxon_server /opt/haulnet/luxon_server
 COPY --from=luxon /LICENSE /opt/haulnet/LuxonServer-LICENSE.txt
-COPY --from=build /out/haulnetd /opt/haulnet/haulnetd
+COPY --from=luxon /NOTICES /opt/haulnet/LuxonServer-THIRD_PARTY_NOTICES.txt
+COPY --from=build /out/haulnetd /out/Go-LICENSE.txt /opt/haulnet/
 COPY LICENSE THIRD_PARTY_NOTICES.md /opt/haulnet/
 ENV WORK_DIR=/var/lib/haulnet
 USER haulnet
