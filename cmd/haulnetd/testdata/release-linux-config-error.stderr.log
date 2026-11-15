@@ -1,0 +1,3 @@
+Fatal error: Config error at Foo: unknown top-level key: Foo
+
+Runtime destroyed.

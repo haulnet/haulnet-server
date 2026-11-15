@@ -4,8 +4,9 @@ A ready-to-run game server for [Haulnet](https://github.com/haulnet/haulnet-repo
 R.E.P.O. players play without Photon Cloud. Run it on a VPS or a home server, and players with Haulnet can
 host their games on it.
 
-It is the unmodified [LuxonServer](https://github.com/niansa/LuxonServer) (an open-source Photon-compatible
-server, BSD-3-Clause) with a configuration for R.E.P.O. and a small helper, `haulnetd`, that:
+It is [LuxonServer](https://github.com/niansa/LuxonServer) (an open-source Photon-compatible server,
+BSD-3-Clause), built from Haulnet's fork [haulnet/LuxonServer](https://github.com/haulnet/LuxonServer), with a
+configuration for R.E.P.O. and a small helper, `haulnetd`, that:
 
 - writes LuxonServer's config from a few environment variables and checks them;
 - starts and stops LuxonServer;
@@ -107,7 +108,7 @@ curl http://<server>:27080/status
 ```
 
 ```json
-{"haulnet_server":"0.1.0","luxon":"v1.5","name":"msk-1","rooms":3,"players":11,"max_rooms":40,"max_players":200,"cpu_busy":0.04,"accepting":true,"draining":false,"uptime_s":86400}
+{"haulnet_server":"0.1.0","luxon":"v1.5-haulnet.1","name":"msk-1","rooms":3,"players":11,"max_rooms":40,"max_players":200,"cpu_busy":0.04,"accepting":true,"draining":false,"uptime_s":86400}
 ```
 
 - `rooms` / `players`: game rooms and the players in them, private rooms included. Voice rooms are not
