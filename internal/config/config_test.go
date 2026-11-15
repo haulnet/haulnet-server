@@ -125,3 +125,19 @@ func TestLoadEnvFile(t *testing.T) {
 		t.Error("expected an error for a line without =")
 	}
 }
+
+// testdata/luxon-config.yml is the exact file LuxonServer v1.5 and the haulnet/LuxonServer fork were started with in
+// the contract checks (both accepted it without errors or warnings). A change here needs that check again.
+func TestRenderLuxonConfigMatchesCheckedFile(t *testing.T) {
+	want, err := os.ReadFile(filepath.Join("testdata", "luxon-config.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(lookupFrom(map[string]string{"EXTERNAL_ADDRESS": "127.0.0.1"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := RenderLuxonConfig(cfg); got != string(want) {
+		t.Errorf("config differs from testdata/luxon-config.yml:\n%s", got)
+	}
+}
