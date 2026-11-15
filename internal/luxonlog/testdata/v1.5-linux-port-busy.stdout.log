@@ -1,0 +1,10 @@
+[2026-11-15 16:48:09.969] [ServerManager] [info] Config looks alright, setting up accordingly
+[2026-11-15 16:48:09.969] [ServerManager] [info] Initializing HTTP Server on port 5088
+[2026-11-15 16:48:09.969] [HTTPServer] [info] Listening on http://127.0.0.1:5088
+[2026-11-15 16:48:09.969] [ServerManager] [info] Setting up GameServer on port 27002
+[2026-11-15 16:48:09.969] [ServerManager] [info] Starting GameServer on port 27002
+[2026-11-15 16:48:09.969] [ServerManager] [info] Setting up MasterServer on port 27001
+[2026-11-15 16:48:09.969] [ServerManager] [info] Starting MasterServer on port 27001
+[2026-11-15 16:48:09.969] [ServerManager] [info] Setting up NameServer on port 27000
+[2026-11-15 16:48:09.969] [ServerManager] [info] Starting NameServer on port 27000
+[2026-11-15 16:48:09.969] [ServerManager] [error] Failed to bind NameServer to port 27000!

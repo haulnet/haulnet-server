@@ -126,8 +126,8 @@ func TestLoadEnvFile(t *testing.T) {
 	}
 }
 
-// testdata/luxon-config.yml is the exact file LuxonServer v1.5 and the haulnet/LuxonServer fork were started with in
-// the contract checks (both accepted it without errors or warnings). A change here needs that check again.
+// testdata/luxon-config.yml is the exact file LuxonServer v1.5 was started with in the contract checks (accepted
+// without errors or warnings). A change here needs that check again.
 func TestRenderLuxonConfigMatchesCheckedFile(t *testing.T) {
 	want, err := os.ReadFile(filepath.Join("testdata", "luxon-config.yml"))
 	if err != nil {

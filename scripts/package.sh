@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Linux tarball and the Windows zip: haulnetd + the pinned LuxonServer release binary.
+# Builds the Linux tarball and the Windows zip: haulnetd + the pinned, unmodified LuxonServer binary.
 # Usage: scripts/package.sh <version>    Output: build/*.tar.gz, build/*.zip
 set -euo pipefail
 
@@ -26,10 +26,10 @@ fetch() { # url file sha256
   fi
 }
 
-base="https://github.com/$LUXON_REPO/releases/download/$LUXON_VERSION"
+base="https://github.com/niansa/LuxonServer/releases/download/$LUXON_VERSION"
 fetch "$base/$LUXON_LINUX_ASSET" "$cache/luxon_server" "$LUXON_LINUX_SHA256"
 fetch "$base/$LUXON_WINDOWS_ASSET" "$cache/luxon_server.exe" "$LUXON_WINDOWS_SHA256"
-fetch "https://raw.githubusercontent.com/$LUXON_REPO/$LUXON_VERSION/LICENSE" "$cache/LICENSE" "$LUXON_LICENSE_SHA256"
+fetch "https://raw.githubusercontent.com/niansa/LuxonServer/$LUXON_VERSION/LICENSE" "$cache/LICENSE" "$LUXON_LICENSE_SHA256"
 
 ldflags="-s -w -X main.version=$version -X main.luxonVersion=$LUXON_VERSION"
 
