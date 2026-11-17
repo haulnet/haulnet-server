@@ -1,5 +1,5 @@
 @echo off
-rem Haulnet community server for Windows. Settings: haulnet-server.env next to this file.
+rem Haulnet server for Windows. Settings: haulnet-server.env next to this file.
 cd /d "%~dp0"
 if not exist haulnet-server.env (
   copy /y haulnet-server.env.example haulnet-server.env >nul

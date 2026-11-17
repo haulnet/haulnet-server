@@ -1,4 +1,4 @@
-# Haulnet community server: unmodified LuxonServer + haulnetd (config from env, status endpoint).
+# Haulnet server: unmodified LuxonServer + haulnetd (config from env, status endpoint).
 # Values must match luxon.lock; CI checks this.
 ARG GO_VERSION=1.25
 ARG ALPINE_VERSION=3.22
@@ -49,5 +49,5 @@ ARG REVISION=
 LABEL org.opencontainers.image.source="https://github.com/haulnet/haulnet-server" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.description="Haulnet community server for R.E.P.O. (LuxonServer)" \
+      org.opencontainers.image.description="Haulnet server for R.E.P.O. (LuxonServer)" \
       org.opencontainers.image.licenses="MIT AND BSD-3-Clause"

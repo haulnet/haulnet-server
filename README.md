@@ -13,14 +13,14 @@ server, BSD-3-Clause) with a configuration for R.E.P.O. and a small helper, `hau
 
 - writes LuxonServer's config from a few environment variables and checks them;
 - starts and stops LuxonServer;
-- publishes a read-only **status endpoint** with room and player counts, so Haulnet can choose the least
-  loaded server in a city.
+- publishes a read-only **status endpoint** with room and player counts, so Haulnet can choose a server in a
+  city by its load.
 
 ## Requirements
 
-- Linux x86-64 (Docker or plain systemd), or Windows x64.
+- Linux x86_64 (Docker or plain systemd), or Windows x86_64.
 - A public IPv4 address, UDP not filtered by the provider. IPv6 works too, but an IPv6-only server is not
-  enough: most players have no IPv6 (in Russia about nine in ten).
+  enough: most players have no IPv6.
 - Bandwidth: roughly 2–4 Mbit/s outgoing per 6-player room; an unmetered port of 100 Mbit/s or more is
   recommended. DDoS protection that covers UDP is strongly recommended for public servers.
 - CPU and memory are modest: LuxonServer is a single-threaded C++ program.
@@ -54,8 +54,13 @@ All settings are environment variables (or `KEY=VALUE` lines in `haulnet-server.
 | `STATS_LOG_INTERVAL` | `0` (off) | Log rooms, players, kbit/s in/out and CPU load every interval, e.g. `60s`. |
 | `WORK_DIR` | `$STATE_DIRECTORY` or `.` | Where LuxonServer's generated `config.yml` is written. |
 | `LUXON_BIN` | `luxon_server` next to haulnetd | Path to the LuxonServer binary. |
+| `LUXON_HTTP_PORT` | `5088` | Loopback port of LuxonServer's web API, where haulnetd reads the room and player counts. Change it only if another program uses 5088. |
 
 A private or loopback `EXTERNAL_ADDRESS` is allowed (a LAN party, a Radmin VPN network) and logged as a warning.
+
+`haulnet-update` (Docker) has two settings of its own in the same `haulnet-server.env`: `UPDATE_WINDOW` and
+`UPDATE_FORCE_AFTER`, both empty by default and described under [Updating](#updating). It reads them from that file
+only, not from the environment.
 
 ## Run with Docker
 
@@ -69,8 +74,8 @@ curl -fsSLO "$base/docker-compose.yml"
 curl -fsSLO "$base/haulnet-update" && chmod +x haulnet-update
 curl -fsSL -o haulnet-server.env "$base/haulnet-server.env.example"
 nano haulnet-server.env        # set EXTERNAL_ADDRESS
-docker compose up -d
-docker compose logs -f
+sudo docker compose up -d
+sudo docker compose logs -f
 ```
 
 The compose file uses host networking (recommended for UDP game traffic) and the image tag `latest`, the newest
@@ -103,8 +108,9 @@ The unit runs as a dynamic unprivileged user with a read-only system.
 
 ## Run on Windows
 
-Unzip `haulnet-server-<version>-windows-x86_64.zip`, run `start.bat` once (it creates
-`haulnet-server.env`), set `EXTERNAL_ADDRESS` in that file and run `start.bat` again. Allow
+Download `haulnet-server-<version>-windows-x86_64.zip` from the
+[latest release](https://github.com/haulnet/haulnet-server/releases/latest) and unzip it. Run `start.bat` once (it
+creates `haulnet-server.env`), set `EXTERNAL_ADDRESS` in that file and run `start.bat` again. Allow
 `luxon_server.exe` (UDP) and `haulnetd.exe` (TCP 27080) in Windows Firewall when asked.
 
 Stop the server by closing its console window. Ending only `haulnetd.exe` (Task Manager, `taskkill`) leaves
@@ -126,7 +132,7 @@ curl http://<server>:27080/status
 ```
 
 ```json
-{"haulnet_server":"0.1.0","luxon":"v1.5","name":"msk-1","rooms":3,"players":11,"max_rooms":40,"max_players":200,"cpu_busy":0.04,"accepting":true,"draining":false,"uptime_s":86400}
+{"haulnet_server":"0.1.0","luxon":"v1.5","name":"moscow-1","rooms":3,"players":11,"max_rooms":40,"max_players":200,"cpu_busy":0.04,"accepting":true,"draining":false,"uptime_s":86400}
 ```
 
 - `rooms` / `players`: game rooms and the players in them, private rooms included. Voice rooms are not
@@ -151,7 +157,7 @@ do not publish them.
 Releases pin one LuxonServer version (see [`luxon.lock`](luxon.lock)). When R.E.P.O. changes its Photon
 version, a new release follows; Haulnet hides servers with an incompatible version. Every change to this
 repository's `main` branch that passes the tests is released as the next patch version, so releases are frequent
-and small; changes to Markdown files alone wait for the next release.
+and small; changes to documentation and repository settings files alone wait for the next release.
 
 ### Update once (Docker)
 
@@ -164,9 +170,9 @@ the status endpoint reports `"accepting": false, "draining": true`, so Haulnet s
 running games and friends joining them are not affected; the next run checks again. With
 `UPDATE_FORCE_AFTER=3h` in `haulnet-server.env` the update is installed anyway once it has waited that long, and
 `sudo ./haulnet-update --force` installs it right now; both disconnect the players who are still on. Once the server
-is empty, it restarts with the new image and checks `/healthz` and `/status`. If the new version does not come up within 90 seconds, it starts the
-previous one again and never installs that image again. Plain `docker compose pull && docker compose up -d` works
-too, without these checks.
+is empty, it restarts with the new image and checks `/healthz` and `/status`. If the new version does not come up
+within 90 seconds, it starts the previous one again and never installs that image again. Plain
+`sudo docker compose pull && sudo docker compose up -d` works too, without these checks.
 
 ### Automatic updates (Docker, off by default)
 
@@ -209,8 +215,9 @@ LuxonServer is downloaded from its GitHub release at build time and checked agai
 
 Haulnet is an independent fan project. It is not affiliated with or endorsed by semiwork (developers of
 R.E.P.O.) or Exit Games GmbH. "R.E.P.O." and "Photon" are trademarks of their respective owners and are used
-only to describe compatibility. Haulnet is not affiliated with LuxonServer or its contributors.
+only to describe compatibility.
 
 ## License
 
 MIT, see [LICENSE](LICENSE). Redistributed components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Haulnet is not affiliated with LuxonServer or its contributors.
