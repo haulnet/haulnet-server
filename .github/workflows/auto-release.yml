@@ -43,11 +43,12 @@ jobs:
           if [ -z "$last" ]; then
             echo "no release yet: tag the first version by hand"; exit 0
           fi
-          # Files that do not change what a server runs: docs and repository settings. A release with only these
-          # would restart official servers for nothing; they go out with the next release that changes code.
-          non_code='\.md$|(^|/)\.git(ignore|attributes)$|^\.editorconfig$|^LICENSE$'
+          # Files that do not change what a server runs: docs, repository settings and the workflows themselves. A
+          # release with only these would restart official servers for nothing; they go out with the next release
+          # that changes code.
+          non_code='\.md$|(^|/)\.git(ignore|attributes)$|^\.editorconfig$|^LICENSE$|^\.github/'
           if ! git diff --name-only "$last" "$SHA" | grep -qvE "$non_code"; then
-            echo "only documentation or repository settings changed since $last"; exit 0
+            echo "only documentation, repository settings or workflows changed since $last"; exit 0
           fi
           IFS=. read -r major minor patch <<<"${last#v}"
           tag="v$major.$minor.$((patch + 1))"
