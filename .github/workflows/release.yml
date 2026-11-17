@@ -60,5 +60,5 @@ jobs:
         run: |
           . ./luxon.lock
           gh release create "$TAG" build/*.tar.gz build/*.zip build/docker/* build/SHA256SUMS \
-            --verify-tag --title "$TAG" --generate-notes \
+            --verify-tag --title "haulnet-server $VERSION" --generate-notes \
             --notes "LuxonServer ${LUXON_VERSION}. Image: ghcr.io/${GITHUB_REPOSITORY}:${VERSION}"
