@@ -1,5 +1,5 @@
 [Unit]
-Description=Haulnet community server (LuxonServer for R.E.P.O.)
+Description=Haulnet server (LuxonServer for R.E.P.O.)
 Documentation=https://github.com/haulnet/haulnet-server
 After=network-online.target
 Wants=network-online.target

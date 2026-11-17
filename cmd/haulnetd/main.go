@@ -1,4 +1,4 @@
-// Command haulnetd runs a Haulnet community server: it renders LuxonServer's config from the environment,
+// Command haulnetd runs a Haulnet server: it renders LuxonServer's config from the environment,
 // runs the unmodified LuxonServer binary as a child process and serves a read-only status endpoint.
 package main
 

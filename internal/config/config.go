@@ -23,7 +23,7 @@ const (
 )
 
 // Region is the only region the server offers: LuxonServer name "europe", Photon code "eu", the same as the
-// server bundled in the mod. The name means nothing for a community server; it only has to match.
+// server bundled in the mod. The name means nothing for a Haulnet server; it only has to match.
 const Region = "europe"
 
 // Config is everything haulnetd needs to run one server.

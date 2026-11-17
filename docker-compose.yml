@@ -1,5 +1,5 @@
-# Haulnet community server. Copy dist/haulnet-server.env.example to haulnet-server.env, set
-# EXTERNAL_ADDRESS, then: docker compose up -d
+# Haulnet server. Save haulnet-server.env.example (a release asset, like this file) as haulnet-server.env
+# next to it, set EXTERNAL_ADDRESS, then: docker compose up -d
 services:
   haulnet-server:
     # "latest" is the newest release. Pin a version with HAULNET_SERVER_TAG in .env next to this file;
