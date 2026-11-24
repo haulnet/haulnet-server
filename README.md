@@ -4,6 +4,8 @@ A ready-to-run game server for [Haulnet](https://github.com/haulnet/haulnet-repo
 R.E.P.O. players play without Photon Cloud. Run it on a VPS or a home server, and players with Haulnet can
 host their games on it. The official Haulnet servers run this same package.
 
+Players can [install the Haulnet mod](https://haulnet.cc/docs/install/) through Thunderstore or GitHub Releases.
+
 Keep it for your friends (they add it with "+ Server by address" in the game) or list it for everyone in the
 public [server list](https://github.com/haulnet/haulnet-servers), which asks you to keep it online around the clock.
 The difference: [haulnet.cc/docs/server](https://haulnet.cc/docs/server/#private-or-public).
